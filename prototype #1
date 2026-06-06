@@ -1,0 +1,295 @@
+import requests
+import pandas as pd
+import sqlite3
+import matplotlib.pyplot as plt
+from dotenv import load_dotenv
+from datetime import datetime
+
+# =====================================================
+# CONFIGURAÇÃO
+# =====================================================
+
+SCAN_INTERVAL = 60
+DB_NAME = "vintelligence.db"
+
+TARGET_PRODUCTS = {
+
+    "ralph_lauren": {
+        "sweaters": [
+            "ralph lauren sweater",
+            "polo ralph lauren sweater",
+            "ralph lauren knit"],
+
+        "jackets": [
+            "ralph lauren jacket",
+            "ralph lauren coat"],
+
+        "puffers": [
+            "ralph lauren puffer",
+            "ralph lauren down jacket"]},
+
+    "carhartt": {
+        "sweaters": [
+            "carhartt sweater",
+            "carhartt sweatshirt",
+            "carhartt crewneck"],
+
+        "jackets": [
+            "carhartt jacket",
+            "carhartt detroit",
+            "carhartt active jacket"]},
+
+    "ami": {
+        "sweaters": [
+            "ami paris sweater",
+            "ami knit",
+            "ami de coeur sweater"]},
+
+    "arcteryx": {
+        "jackets": [
+            "arcteryx jacket",
+            "arcteryx beta"],
+
+        "puffers": [
+            "arcteryx puffer",
+            "arcteryx down"]},
+
+    "tnf": {
+        "jackets": [
+            "north face jacket",
+            "tnf jacket"],
+
+        "puffers": [
+            "north face nuptse",
+            "north face puffer",
+            "tnf puffer"]},
+
+    "nike": {
+        "airmax": [
+            "air max",
+            "airmax"],
+
+        "jordan": [
+            "air jordan",
+            "jordan 1",
+            "jordan 4"],
+
+        "airforce": [
+            "air force 1",
+            "af1"],
+
+        "dunk": [
+            "nike dunk",
+            "dunk low",
+            "dunk high"]}
+}
+
+# =====================================================
+# DATABASE
+# =====================================================
+
+def init_database():
+
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS listings (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        item_id TEXT UNIQUE,
+        title TEXT NOT NULL,
+        brand TEXT,
+        category TEXT,
+        price REAL,
+        estimated_value REAL,
+        profit REAL,
+        roi REAL,
+        score REAL,
+        url TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)
+    """)
+    conn.commit()
+    conn.close()
+    print("Database initialized.")
+
+def insert_listing(
+    item_id,
+    title,
+    brand,
+    category,
+    price,
+    estimated_value,
+    profit,
+    roi,
+    score,
+    url
+):
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+        INSERT INTO listings (
+            item_id,
+            title,
+            brand,
+            category,
+            price,
+            estimated_value,
+            profit,
+            roi,
+            score,
+            url)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            item_id,
+            title,
+            brand,
+            category,
+            price,
+            estimated_value,
+            profit,
+            roi,
+            score,
+            url
+        ))
+
+        conn.commit()
+
+    except sqlite3.IntegrityError:
+        print(f"{item_id} already exists.")
+    finally:
+        conn.close()
+
+def get_all_listings():
+    conn = sqlite3.connect(DB_NAME)
+    df = pd.read_sql_query(
+        "SELECT * FROM listings",
+        conn)
+    conn.close()
+    return df
+
+def count_listings():
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT COUNT(*) FROM listings")
+    count = cursor.fetchone()[0]
+    conn.close()
+    return count
+
+def get_best_deals(limit=10):
+    conn = sqlite3.connect(DB_NAME)
+    df = pd.read_sql_query(
+        f"""
+        SELECT *
+        FROM listings
+        ORDER BY score DESC
+        LIMIT {limit}
+        """,
+        conn)
+    conn.close()
+    return df
+
+# =====================================================
+# CLASSIFICAÇÃO
+# =====================================================
+
+def classify_item(title):
+    title = title.lower()
+    for brand, categories in TARGET_PRODUCTS.items():
+        for category, keywords in categories.items():
+            for keyword in keywords:
+                if keyword in title:
+                    return brand, category
+    return None, None
+
+# =====================================================
+# PROFIT ENGINE
+# =====================================================
+
+def estimate_resell_value(price):
+    return round(price * 1.5, 2)
+
+def calculate_profit(
+    purchase_price,
+    estimated_value):
+    return round(
+        estimated_value - purchase_price,2)
+
+
+def calculate_roi(
+    purchase_price,
+    estimated_value
+):
+
+    if purchase_price <= 0:
+        return 0
+
+    profit = (
+        estimated_value -
+        purchase_price
+    )
+
+    return round(
+        (profit / purchase_price) * 100,
+        2
+    )
+
+
+def calculate_score(
+    profit,
+    roi
+):
+
+    score = (
+        roi * 0.7 +
+        profit * 0.3
+    )
+
+    return round(score, 2)
+
+
+# =====================================================
+# GRÁFICOS
+# =====================================================
+
+def plot_profit_graph():
+    df = get_all_listings()
+    if df.empty:
+        print("No data available.")
+        return
+    plt.figure(figsize=(12, 6))
+    plt.plot(
+        df.index,
+        df["profit"])
+    plt.title("Profit Evolution")
+    plt.xlabel("Listings")
+    plt.ylabel("Profit (€)")
+    plt.grid()
+    plt.show()
+
+
+# =====================================================
+# TESTE
+# =====================================================
+
+if __name__ == "__main__":
+    init_database()
+    print(f"Listings in database: {count_listings()}")
+    title = "The North Face Puffer Jacket"
+    brand, category = classify_item(title)
+    price = 40
+    estimated_value = (estimate_resell_value(price))
+    profit = calculate_profit(price,estimated_value)
+    roi = calculate_roi(price,estimated_value)
+    score = calculate_score(profit,roi)
+    print()
+    print("CLASSIFICATION")
+    print("Brand:", brand)
+    print("Category:", category)
+    print()
+    print("METRICS")
+    print("Price:", price)
+    print("Estimated:", estimated_value)
+    print("Profit:", profit)
+    print("ROI:", roi)
+    print("Score:", score)
