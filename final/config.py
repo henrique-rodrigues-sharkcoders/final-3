@@ -1,0 +1,2 @@
+DISCORD_WEBHOOK = "https://discord.com/api/webhooks/1515357404634812427/FoqWuQOD1KyvNQS_DPSMbCUL5NqQkKydx-1dx6w9YUnEmVLz4shUBHK_vvdfSaisJkjQ"
+SLEEP_TIME = 30
